@@ -2,54 +2,114 @@
 
 import { useState, type FormEvent } from "react";
 
+interface DlmmPosition {
+  positionAddress: string;
+  owner: string;
+  lowerBinId: number;
+  upperBinId: number;
+  totalXAmount: string;
+  totalYAmount: string;
+  feeX: string;
+  feeY: string;
+}
+
+interface DlmmPool {
+  poolAddress: string;
+  positions: DlmmPosition[];
+}
+
 export function WalletSearch() {
   const [address, setAddress] = useState("");
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const [isValid, setIsValid] = useState<boolean | null>(null);
+  const [positions, setPositions] = useState<DlmmPosition[]>([]);
+  const [totalPools, setTotalPools] = useState(0);
 
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
 
-async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-  event.preventDefault();
+    const value = address.trim();
 
-  const value = address.trim();
-
-  if (!value) {
-    setMessage("Enter a wallet address.");
-    setIsValid(null);
-    return;
-  }
-
-  setLoading(true);
-  setIsValid(null);
-  setMessage("Validating Solana wallet address...");
-
-  try {
-    const response = await fetch("/api/wallets/validate", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ address: value }),
-    });
-
-    const result = await response.json();
-
-    if (!response.ok) {
-      setIsValid(false);
-      setMessage(result.error || "Invalid wallet address.");
+    if (!value) {
+      setMessage("Enter a wallet address.");
+      setIsValid(null);
       return;
     }
 
-    setIsValid(true);
-    setMessage("Valid Solana address! Wallet lookup is coming next.");
-  } catch {
+    setLoading(true);
     setIsValid(null);
-    setMessage("Unable to reach the server. Please try again.");
-  } finally {
-    setLoading(false);
+    setMessage("Validating Solana wallet address...");
+
+    try {
+      const response = await fetch("/api/wallets/validate", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ address: value }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        setIsValid(false);
+        setMessage(result.error || "Invalid wallet address.");
+        return;
+      }
+
+      const balanceResponse = await fetch("/api/wallets/balance", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ address: value }),
+      });
+
+      const balanceResult = await balanceResponse.json();
+
+      if (!balanceResponse.ok) {
+        setIsValid(false);
+        setMessage(balanceResult.error || "Unable to retrieve wallet balance.");
+        return;
+      }
+
+      const positionsResponse = await fetch("/api/wallets/positions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ address: value }),
+      });
+
+      const positionsResult = await positionsResponse.json();
+
+      if (!positionsResponse.ok) {
+        setPositions([]);
+        setTotalPools(0);
+        setIsValid(false);
+        setMessage(
+          positionsResult.error || "Unable to retrieve DLMM positions.",
+        );
+        return;
+      }
+
+      setPositions(
+        positionsResult.pools.flatMap((pool: DlmmPool) => pool.positions),
+      );
+      setTotalPools(positionsResult.totalPools);
+
+      setIsValid(true);
+      setMessage(`Wallet balance: ${balanceResult.sol.toFixed(6)} SOL`);
+    } catch {
+      setPositions([]);
+      setTotalPools(0);
+      setIsValid(null);
+      setMessage("Unable to reach the server. Please try again.");
+    } finally {
+      setLoading(false);
+    }
   }
-}
 
   return (
     <form onSubmit={handleSubmit} className="w-full max-w-2xl" noValidate>
@@ -87,8 +147,52 @@ async function handleSubmit(event: FormEvent<HTMLFormElement>) {
               : "text-muted"
         }`}
       >
-      {message}
+        {message}
       </p>
+      {isValid && (
+        <div className="mt-6 space-y-4">
+          <h3 className="text-lg font-semibold">
+            DLMM Positions ({positions.length})
+          </h3>
+
+          <p className="text-sm text-muted-foreground">
+            Found in {totalPools} liquidity pool(s).
+          </p>
+
+          {positions.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              No active DLMM positions found for this wallet.
+            </p>
+          ) : (
+            positions.map((position) => (
+              <div
+                key={position.positionAddress}
+                className="rounded-xl border border-line bg-surface p-4 space-y-2"
+              >
+                <p className="text-sm font-medium">
+                  Position: {position.positionAddress}
+                </p>
+
+                <p className="text-sm text-muted-foreground">
+                  Owner: {position.owner}
+                </p>
+
+                <p className="text-sm text-muted-foreground">
+                  Bin range: {position.lowerBinId} – {position.upperBinId}
+                </p>
+
+                <p className="text-sm">Token X: {position.totalXAmount}</p>
+
+                <p className="text-sm">Token Y: {position.totalYAmount}</p>
+
+                <p className="text-sm">Fees X: {position.feeX}</p>
+
+                <p className="text-sm">Fees Y: {position.feeY}</p>
+              </div>
+            ))
+          )}
+        </div>
+      )}
     </form>
   );
 }

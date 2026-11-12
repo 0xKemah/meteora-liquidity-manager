@@ -18,8 +18,7 @@ export function Hero() {
           <p className="max-w-2xl text-base leading-7 text-muted sm:text-lg">
             Search a wallet, review its active Meteora DLMM positions, and
             prepare the actions you will take once wallet connection is in
-            place. This screen is the product shell. It does not read the
-            chain.
+            place.
           </p>
         </div>
         <WalletSearch />
