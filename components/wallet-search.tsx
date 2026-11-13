@@ -2,6 +2,16 @@
 
 import { useState, type FormEvent } from "react";
 
+interface TokenMetadata {
+  id: string;
+  name?: string;
+  symbol?: string;
+  icon?: string;
+  decimals?: number;
+  usdPrice?: number;
+  mcap?: number;
+}
+
 interface DlmmPosition {
   positionAddress: string;
   owner: string;
@@ -11,11 +21,33 @@ interface DlmmPosition {
   totalYAmount: string;
   feeX: string;
   feeY: string;
+  tokenXMint: string;
+  tokenYMint: string;
+  tokenX: TokenMetadata | null;
+  tokenY: TokenMetadata | null;
+  tokenXDecimals: number;
+  tokenYDecimals: number;
 }
 
 interface DlmmPool {
   poolAddress: string;
   positions: DlmmPosition[];
+}
+
+function formatTokenAmount(amount: string | number, decimals: number): string {
+  const rawAmount = BigInt(amount.toString());
+  const divisor = BigInt(10) ** BigInt(decimals);
+
+  const whole = rawAmount / divisor;
+  const remainder = rawAmount % divisor;
+
+  const fraction = remainder
+    .toString()
+    .padStart(decimals, "0")
+    .slice(0, 6)
+    .replace(/0+$/, "");
+
+  return fraction ? `${whole}.${fraction}` : whole.toString();
 }
 
 export function WalletSearch() {
@@ -181,13 +213,33 @@ export function WalletSearch() {
                   Bin range: {position.lowerBinId} – {position.upperBinId}
                 </p>
 
-                <p className="text-sm">Token X: {position.totalXAmount}</p>
+                <p className="text-sm">
+                  {position.tokenX?.name ?? "Unknown Token"} (
+                  {position.tokenX?.symbol ?? "X"}):{" "}
+                  {formatTokenAmount(
+                    position.totalXAmount,
+                    position.tokenXDecimals,
+                  )}
+                </p>
 
-                <p className="text-sm">Token Y: {position.totalYAmount}</p>
+                <p className="text-sm">
+                  {position.tokenY?.name ?? "Unknown Token"} (
+                  {position.tokenY?.symbol ?? "Y"}):{" "}
+                  {formatTokenAmount(
+                    position.totalYAmount,
+                    position.tokenYDecimals,
+                  )}
+                </p>
 
-                <p className="text-sm">Fees X: {position.feeX}</p>
+                <p className="text-sm">
+                  Fees X:{" "}
+                  {formatTokenAmount(position.feeX, position.tokenXDecimals)}
+                </p>
 
-                <p className="text-sm">Fees Y: {position.feeY}</p>
+                <p className="text-sm">
+                  Fees Y:{" "}
+                  {formatTokenAmount(position.feeY, position.tokenYDecimals)}
+                </p>
               </div>
             ))
           )}
