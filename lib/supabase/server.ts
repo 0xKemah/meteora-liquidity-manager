@@ -1,17 +1,30 @@
-
 import "server-only";
 
-import { createClient } from "@supabase/supabase-js";
+import { createServerClient } from "@supabase/ssr";
+import { cookies } from "next/headers";
 
-const supabaseUrl = process.env.SUPABASE_URL;
-const supabasePublishableKey =
-  process.env.SUPABASE_PUBLISHABLE_KEY;
+export async function createClient() {
+  const cookieStore = await cookies();
 
-if (!supabaseUrl || !supabasePublishableKey) {
-  throw new Error("Missing Supabase environment variables.");
+  return createServerClient(
+    process.env.SUPABASE_URL!,
+    process.env.SUPABASE_PUBLISHABLE_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return cookieStore.getAll();
+        },
+        setAll(cookiesToSet) {
+          try {
+            cookiesToSet.forEach(({ name, value, options }) =>
+              cookieStore.set(name, value, options),
+            );
+          } catch {
+            // Cookie updates may not be permitted
+            // in some server rendering contexts.
+          }
+        },
+      },
+    },
+  );
 }
-
-export const supabase = createClient(
-  supabaseUrl,
-  supabasePublishableKey
-);

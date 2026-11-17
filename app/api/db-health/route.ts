@@ -1,19 +1,17 @@
-
 import { NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase/server";
+import { createClient } from "@/lib/supabase/server";
 
 export async function GET() {
-  const { data, error } = await supabase
-    .from("wallets")
-    .select("id")
-    .limit(1);
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.from("wallets").select("id").limit(1);
 
   if (error) {
     console.error("Database connection failed:", error);
 
     return NextResponse.json(
       { status: "error", message: "Database query failed" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 
