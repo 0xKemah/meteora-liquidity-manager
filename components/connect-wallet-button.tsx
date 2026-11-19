@@ -1,32 +1,30 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
+import { createClient } from "@/lib/supabase/client";
 
 export function ConnectWalletButton() {
-  const { wallet, publicKey, connected, connecting, connect, disconnect } =
-    useWallet();
+  const walletAdapter = useWallet();
+
+  const {
+    wallet,
+    publicKey,
+    connected,
+    connecting,
+    connect,
+    disconnect,
+    signMessage,
+  } = walletAdapter;
 
   const { setVisible } = useWalletModal();
 
-  const pendingConnect = useRef(false);
+  const [loading, setLoading] = useState(false);
+  const [authenticated, setAuthenticated] = useState(false);
   const [error, setError] = useState("");
 
-  useEffect(() => {
-    if (!pendingConnect.current || !wallet || connected || connecting) {
-      return;
-    }
-
-    pendingConnect.current = false;
-
-    void connect().catch((err: unknown) => {
-      console.error("Wallet connection failed:", err);
-      setError(
-        err instanceof Error ? err.message : "Wallet connection failed.",
-      );
-    });
-  }, [wallet, connected, connecting, connect]);
+  const address = publicKey?.toBase58();
 
   async function handleConnect() {
     setError("");
@@ -39,40 +37,95 @@ export function ConnectWalletButton() {
           err instanceof Error ? err.message : "Wallet connection failed.",
         );
       }
-      return;
+    } else {
+      setVisible(true);
     }
-
-    pendingConnect.current = true;
-    setVisible(true);
   }
 
-  if (connected && publicKey) {
-    const address = publicKey.toBase58();
+  async function handleSignIn() {
+    setError("");
+    setLoading(true);
 
+    try {
+      if (!publicKey || !connected || !signMessage) {
+        throw new Error("Your wallet does not support message signing.");
+      }
+
+      const supabase = createClient();
+
+      const { data, error } = await supabase.auth.signInWithWeb3({
+        chain: "solana",
+        statement: "Sign in to Meteora Liquidity Manager.",
+      });
+
+      if (error) throw error;
+
+      if (!data.session) {
+        throw new Error("Authentication completed without a session.");
+      }
+
+      setAuthenticated(true);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Wallet authentication failed.",
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleDisconnect() {
+    setError("");
+    await disconnect();
+    setAuthenticated(false);
+  }
+
+  if (connected && address) {
     return (
-      <div className="flex items-center gap-2">
-        <span className="rounded-full border border-line px-3 py-2 text-sm">
-          {address.slice(0, 4)}...{address.slice(-4)}
-        </span>
+      <div className="flex flex-col items-end gap-2">
+        <div className="flex items-center gap-2">
+          <span className="rounded-full border border-line px-3 py-2 text-sm">
+            {address.slice(0, 4)}...{address.slice(-4)}
+          </span>
 
-        <button
-          type="button"
-          onClick={() => void disconnect()}
-          className="rounded-full border border-line px-4 py-2 text-sm"
-        >
-          Disconnect
-        </button>
+          {!authenticated ? (
+            <button
+              type="button"
+              onClick={handleSignIn}
+              disabled={loading}
+              className="rounded-full bg-accent px-4 py-2 text-sm font-semibold text-accent-foreground disabled:opacity-60"
+            >
+              {loading ? "Signing in..." : "Sign In"}
+            </button>
+          ) : (
+            <span className="text-sm text-green-400">Authenticated</span>
+          )}
+
+          <button
+            type="button"
+            onClick={handleDisconnect}
+            className="rounded-full border border-line px-4 py-2 text-sm"
+          >
+            Disconnect
+          </button>
+        </div>
+
+        {error && (
+          <p role="alert" className="max-w-56 text-xs text-red-400">
+            {error}
+          </p>
+        )}
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col items-end gap-1">
+    <div className="flex flex-col items-end gap-2">
       <button
         type="button"
         onClick={handleConnect}
         disabled={connecting}
-        className="inline-flex h-10 items-center justify-center rounded-full bg-accent px-4 text-sm font-semibold text-accent-foreground transition-colors hover:bg-accent/90 disabled:opacity-60"
+        className="inline-flex h-10 items-center justify-center rounded-full bg-accent px-4 text-sm font-semibold text-accent-foreground disabled:opacity-60"
       >
         {connecting ? "Connecting..." : "Connect Wallet"}
       </button>
