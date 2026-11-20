@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
 import { createClient } from "@/lib/supabase/client";
 
 export function ConnectWalletButton() {
+  const supabase = useMemo(() => createClient(), []);
   const walletAdapter = useWallet();
 
   const {
@@ -19,10 +20,78 @@ export function ConnectWalletButton() {
   } = walletAdapter;
 
   const { setVisible } = useWalletModal();
+  const pendingConnect = useRef(false);
+  const autoSignInAfterReconnect = useRef(false);
 
   const [loading, setLoading] = useState(false);
   const [authenticated, setAuthenticated] = useState(false);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function checkSession() {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (mounted) {
+        setAuthenticated(!!session);
+      }
+
+      console.log("RESTORED SUPABASE SESSION:", !!session);
+    }
+
+    checkSession();
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setAuthenticated(!!session);
+    });
+
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
+  }, [supabase]);
+
+  useEffect(() => {
+    console.log("Wallet selection effect:", {
+      pending: pendingConnect.current,
+      wallet: wallet?.adapter.name,
+      connected,
+      connecting,
+    });
+    if (!pendingConnect.current || !wallet || connected || connecting) {
+      return;
+    }
+
+    pendingConnect.current = false;
+    console.log(
+      "Automatically attempting wallet connection:",
+      wallet?.adapter.name,
+    );
+    connect().catch((err: unknown) => {
+      setError(
+        err instanceof Error ? err.message : "Wallet connection failed.",
+      );
+    });
+  }, [wallet, connected, connecting, connect]);
+
+  useEffect(() => {
+    if (
+      !autoSignInAfterReconnect.current ||
+      !connected ||
+      !publicKey ||
+      loading
+    ) {
+      return;
+    }
+
+    autoSignInAfterReconnect.current = false;
+    handleSignIn();
+  }, [connected, publicKey, loading]);
 
   const address = publicKey?.toBase58();
 
@@ -38,6 +107,11 @@ export function ConnectWalletButton() {
         );
       }
     } else {
+      pendingConnect.current = true;
+      console.log(
+        "Opening wallet modal. Pending connection:",
+        pendingConnect.current,
+      );
       setVisible(true);
     }
   }
@@ -76,39 +150,41 @@ export function ConnectWalletButton() {
 
   async function handleDisconnect() {
     setError("");
-    await disconnect();
-    setAuthenticated(false);
+    setLoading(true);
+
+    try {
+      const { error } = await supabase.auth.signOut();
+
+      if (error) {
+        throw error;
+      }
+
+      await disconnect();
+      autoSignInAfterReconnect.current = true;
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to disconnect wallet.",
+      );
+    } finally {
+      setLoading(false);
+    }
   }
 
   if (connected && address) {
     return (
-      <div className="flex flex-col items-end gap-2">
-        <div className="flex items-center gap-2">
-          <span className="rounded-full border border-line px-3 py-2 text-sm">
-            {address.slice(0, 4)}...{address.slice(-4)}
-          </span>
+      <div className="flex items-center gap-2">
+        <span className="rounded-full border border-line px-3 py-2 text-sm">
+          {address.slice(0, 4)}...{address.slice(-4)}
+        </span>
 
-          {!authenticated ? (
-            <button
-              type="button"
-              onClick={handleSignIn}
-              disabled={loading}
-              className="rounded-full bg-accent px-4 py-2 text-sm font-semibold text-accent-foreground disabled:opacity-60"
-            >
-              {loading ? "Signing in..." : "Sign In"}
-            </button>
-          ) : (
-            <span className="text-sm text-green-400">Authenticated</span>
-          )}
-
-          <button
-            type="button"
-            onClick={handleDisconnect}
-            className="rounded-full border border-line px-4 py-2 text-sm"
-          >
-            Disconnect
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={handleDisconnect}
+          disabled={loading}
+          className="rounded-full border border-line px-4 py-2 text-sm disabled:opacity-60"
+        >
+          Disconnect
+        </button>
 
         {error && (
           <p role="alert" className="max-w-56 text-xs text-red-400">
@@ -125,7 +201,7 @@ export function ConnectWalletButton() {
         type="button"
         onClick={handleConnect}
         disabled={connecting}
-        className="inline-flex h-10 items-center justify-center rounded-full bg-accent px-4 text-sm font-semibold text-accent-foreground disabled:opacity-60"
+        className="inline-flex h-10 items-center justify-center rounded-full bg-accent px-4 text-sm font-semibold text-accent-foreground transition-colors hover:bg-accent/90 disabled:opacity-60"
       >
         {connecting ? "Connecting..." : "Connect Wallet"}
       </button>
